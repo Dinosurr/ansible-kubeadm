@@ -1,0 +1,7 @@
+- hosts: k8s
+  serial: 1
+  tasks:
+  - import_role:
+      name: kubeadm-k8s
+    tags: kubeadm-k8s
+

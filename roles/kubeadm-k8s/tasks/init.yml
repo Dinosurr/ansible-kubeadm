@@ -1,0 +1,35 @@
+---
+- name: Reset all previously installed component
+  shell: kubeadm reset -f
+
+- name: add script to retrieve the discovery token
+  copy: src=GetDiscoveryToken.sh dest=/usr/local/bin/GetDiscoveryToken.sh owner=root group=root mode=0700
+
+- name: add script to retrieve the discovery token
+  copy: src=GetToken.sh dest=/usr/local/bin/GetToken.sh owner=root group=root mode=0700
+
+- name: Init Kubernetes cluster
+  shell: kubeadm init --kubernetes-version {{ k8s_version }} --service-cidr {{ k8s_service_cidr }} --pod-network-cidr {{ k8s_pod_network_cidr }} --apiserver-advertise-address {{ k8s_apiserver_advertise_address }}
+  when: "inventory_hostname == k8s_primary_controlplane"
+
+- name: create kubernetes config dir for root
+  file:
+    path: /root/.kube
+    state: directory
+    owner: root
+    group: root
+
+- name: copy config to root config dir
+  copy:
+    src: /etc/kubernetes/admin.conf
+    dest: /root/.kube/config
+    remote_src: yes
+
+- name: setup calico network
+  shell: kubectl apply -f https://docs.projectcalico.org/v3.11/manifests/calico.yaml
+  when: "inventory_hostname == k8s_primary_controlplane"
+
+- name: Add file which contains installed version
+  template:
+    src: k8s_installed_versions.j2
+    dest: /k8s_installed_versions

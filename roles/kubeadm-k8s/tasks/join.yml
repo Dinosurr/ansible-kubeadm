@@ -1,0 +1,9 @@
+---
+- name: join workers to kubernetes cluster
+  shell: "kubeadm join {{ k8s_apiserver_advertise_address }}:6443 --token {{ k8s_token.stdout }}  --discovery-token-ca-cert-hash sha256:{{ k8s_discovery_token.stdout }}"
+
+- name: Add file which contains installed version
+  template:
+    src: k8s_installed_versions.j2
+    dest: /k8s_installed_versions
+
