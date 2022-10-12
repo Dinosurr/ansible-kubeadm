@@ -25,9 +25,16 @@
     dest: /root/.kube/config
     remote_src: yes
 
-- name: setup calico network
-  shell: kubectl apply -f https://docs.projectcalico.org/v3.11/manifests/calico.yaml
-  when: "inventory_hostname == k8s_primary_controlplane"
+- name: Download metrics-server manifest to the cluster.
+  ansible.builtin.get_url:
+    url: https://raw.githubusercontent.com/projectcalico/calico/v3.24.1/manifests/calico.yaml
+    dest: ~/calico.yaml
+    mode: '0664'
+
+- name: Apply metrics-server manifest to the cluster.
+  kubernetes.core.k8s:
+    state: present
+    src: ~/calico.yaml
 
 - name: Add file which contains installed version
   template:

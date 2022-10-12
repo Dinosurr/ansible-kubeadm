@@ -8,7 +8,9 @@
     - arptables
     - ebtables
     - aptitude
-    - python-apt
+    - python3-apt
+    - python3-kubernetes
+    - gnupg
 
 - name: Change so iptables and arptables legacy is being used.
   alternatives:
@@ -26,84 +28,65 @@
     state: absent
     regexp: 'swap'
 
-- name: disable swap and set it to masked
-  systemd:
-    name: dev-sda2.swap
-    enabled: no
-    masked: yes
-  register: SwapStatus
+# - name: disable swap and set it to masked
+#   systemd:
+#     name: dev-sda2.swap
+#     enabled: no
+#     masked: yes
+#   register: SwapStatus
 
-- name: Reboot server to make sure swap is disabled.
-  reboot:
-    reboot_timeout: 3600
-  when: SwapStatus.changed
-
-- name: create /etc/docker directory
-  file: path=/etc/docker state=directory mode=0700
-
-- name: add daemon.json with overlay2 storage driver enabled and systemd cgroupdriver
-  copy: src=daemon.json dest=/etc/docker/daemon.json owner=root group=root mode=0644
+# - name: Reboot server to make sure swap is disabled.
+#   reboot:
+#     reboot_timeout: 3600
+#   when: SwapStatus.changed
 
 - name: Install docker GPG key
   apt_key: url=https://download.docker.com/linux/debian/gpg state=present
 
 - name: Install docker repo
-  apt_repository: repo='deb [arch=amd64] https://download.docker.com/linux/debian buster stable' state=present
+  apt_repository: repo='deb [arch=amd64] https://download.docker.com/linux/debian bullseye stable' state=present
 
 - name: retrieve installed packages
   package_facts:
     manager: "apt"
 
-- name:  Check Docker version
-  shell: "dpkg -l |grep docker-ce | awk '{ print $2,$3 }' |tr ' ' '='"
-  register: "InstalledDockerVersion"
-  changed_when: false
-
-- name: unhold docker-ce when we want to upgrade on Kubernetes below 1.17
-  shell: "aptitude unhold docker-ce"
-  when: "k8s_version_under_1_17 == true and docker_version_under_1_17 not in InstalledDockerVersion.stdout and 'docker-ce' in ansible_facts.packages"
-
-- name: unhold docker-ce-cli when we want to upgrade on Kubernetes below 1.17
-  shell: "aptitude unhold docker-ce-cli"
-  when: "k8s_version_under_1_17 == true and docker_version_under_1_17 not in InstalledDockerVersion.stdout and 'docker-ce-cli' in ansible_facts.packages"
-
-- name: unhold docker-ce when we want to upgrade on Kubernetes 1.17.X and above
-  shell: "aptitude unhold docker-ce"
-  when: "k8s_version_under_1_17 == false and docker_version_1_17_and_over not in InstalledDockerVersion.stdout and 'docker-ce' in ansible_facts.packages"
-
-- name: unhold docker-ce-cli when we want to upgrade on Kubernetes 1.17.X and above
-  shell: "aptitude unhold docker-ce-cli"
-  when: "k8s_version_under_1_17 == false and docker_version_1_17_and_over not in InstalledDockerVersion.stdout and 'docker-ce-cli' in ansible_facts.packages"
-
-- name: Install Docker Engine for Kubernetes below 1.17 (fixed version https://docs.docker.com/engine/installation/linux/debian/ On production systems, you should install a specific version of Docker instead of always using the latest. apt-cache madison docker-ce )
-  apt: pkg={{ item }}={{ docker_version_under_1_17 }} state=present update_cache=yes
-  loop:
-   - docker-ce-cli
-   - docker-ce
-  when: k8s_version_under_1_17 == true
-
-- name: Install Docker Engine for Kubernetes 1.17.X and above (fixed version https://docs.docker.com/engine/installation/linux/debian/ On production systems.
-  apt: pkg={{ item }}={{ docker_version_1_17_and_over }} state=present update_cache=yes
-  loop:
-   - docker-ce-cli
-   - docker-ce
-  when: k8s_version_under_1_17 == false
+- name: install containerd
+  apt:
+    name:
+      - containerd
 
 - name: retrieve hold docker version status
   command: "apt-mark showhold"
   register: "apt_mark"
   changed_when: false
 
-- name: hold docker version
-  shell: aptitude hold docker-ce
-  when: "'docker-ce' not in apt_mark.stdout"
-
-- name: hold docker-cli version
-  shell: aptitude hold docker-ce-cli
-  when: "'docker-ce-cli' not in apt_mark.stdout"
-
 - name: Enable and start docker service
-  service: name=docker state=started enabled=yes
+  service: name=containerd state=started enabled=yes
+
+- name: add containerd config
+  copy:
+    src: config.toml
+    dest: /etc/containerd/config.toml
+  notify: restart containerd
+
+- name: Ensure br_netfilter is enabled.
+  modprobe:
+    name: br_netfilter
+    state: present
+
+- name: ensure values are set correctly in sysctl
+  sysctl:
+    name: '{{ item.name }}'
+    value: '{{ item.value }}'
+    state: present
+    reload: yes
+  loop:
+    - name: 'net.bridge.bridge-nf-call-iptables'
+      value: '1'
+    - name: 'net.ipv4.ip_forward'
+      value: '1'
+    - name: 'net.bridge.bridge-nf-call-ip6tables'
+      value: '1'
 
 - name:  Check kubelet version
   shell: "dpkg -l |grep kubelet | awk '{ print $2,$3 }' |tr ' ' '='"

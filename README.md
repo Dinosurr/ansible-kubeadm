@@ -26,6 +26,9 @@ kubectl --kubeconfig ./k8s.conf get nodes
 
 Requirements
 ------------
+kubernetes.core collection
+see https://github.com/ansible-collections/kubernetes.core for installation instructions
+
 - This role expect 1 control plane node and multiple workers (atleast 3 is recommended by k8s)
 - Prefered are **KVM** instances created with **public_key auth** and **no password**.
 - hostname on server should be **controlplane.example.com** and **workerX.example.com** *(where you can replace example.com and X with number)*
